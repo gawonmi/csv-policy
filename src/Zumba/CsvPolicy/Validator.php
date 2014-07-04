@@ -6,474 +6,563 @@ use Doctrine\Common\Inflector\Inflector;
 
 /**
  * CsvPolicy Validation Class
- *
  * Based loosely on these:
  *  * https://github.com/javilumbrales/csv_file_validation
  *  * https://github.com/goodby/csv
  */
-class Validator {
+class Validator
+{
 
-	/**
-	 * Collection of column indexes
-	 *
-	 * @access protected
-	 * @var array
-	 */
-	protected $columnIndexes = [];
+    /**
+     * Stop on error
+     *
+     * @var bool
+     */
+    protected $stopOnError = true;
 
-	/**
-	 * Delimiter character
-	 *
-	 * @access protected
-	 * @var string
-	 */
-	protected $delimiter = ',';
+    /**
+     * Collection of column indexes
+     *
+     * @access protected
+     * @var array
+     */
+    protected $columnIndexes = [];
 
-	/**
-	 * Enclosure character
-	 *
-	 * @access protected
-	 * @var string
-	 */
-	protected $enclosure = '"';
+    /**
+     * Delimiter character
+     *
+     * @access protected
+     * @var string
+     */
+    protected $delimiter = ',';
 
-	/**
-	 * Collection of validation errors
-	 *
-	 * @access protected
-	 * @var array
-	 */
-	protected $errors = [];
+    /**
+     * Enclosure character
+     *
+     * @access protected
+     * @var string
+     */
+    protected $enclosure = '"';
 
-	/**
-	 * Escape character
-	 *
-	 * @access protected
-	 * @var array
-	 */
-	protected $escape = '\\';
+    /**
+     * Collection of validation errors
+     *
+     * @access protected
+     * @var array
+     */
+    protected $errors = [];
 
-	/**
-	 * Collection of required fields
-	 *
-	 * @access protected
-	 * @var array
-	 */
-	protected $requiredFields = [];
+    /**
+     * Escape character
+     *
+     * @access protected
+     * @var array
+     */
+    protected $escape = '\\';
 
-	/**
-	 * Collection of rules objects
-	 *
-	 * @access protected
-	 * @var array
-	 */
-	protected $rules = [];
+    /**
+     * Collection of required fields
+     *
+     * @access protected
+     * @var array
+     */
+    protected $requiredFields = [];
 
-	/**
-	 * Numerically indexed array of classNames that map to the indexes of Validator::$rules
-	 *
-	 * @access protected
-	 * @var array
-	 */
-	protected $rulesMap = [];
+    /**
+     * Collection of rules objects
+     *
+     * @access protected
+     * @var array
+     */
+    protected $rules = [];
 
-	/**
-	 * The location of the rule class files.
-	 *
-	 * This should be an absolute path to the directory containing your `CsvPolicy/Rule`
-	 * directory, without a trailing slash. For example, the path for the following rule file:
-	 *
-	 * /Users/you/project/app/Lib/CsvPolicy/Rule/SomeFile/SomeRule.php
-	 *
-	 * should be:
-	 *
-	 * /Users/you/project/app/Lib
-	 *
-	 * @var string
-	 */
-	protected $rulesPath = '';
+    /**
+     * Numerically indexed array of classNames that map to the indexes of Validator::$rules
+     *
+     * @access protected
+     * @var array
+     */
+    protected $rulesMap = [];
 
-	/**
-	 * Validator Class constructor
-	 *
-	 * @access public
-	 * @param array $config
-	 */
-	public function __construct(array $config = []) {
-		$this->config($config);
-	}
+    /**
+     * The location of the rule class files.
+     * This should be an absolute path to the directory containing your `CsvPolicy/Rule`
+     * directory, without a trailing slash. For example, the path for the following rule file:
+     * /Users/you/project/app/Lib/CsvPolicy/Rule/SomeFile/SomeRule.php
+     * should be:
+     * /Users/you/project/app/Lib
+     *
+     * @var string
+     */
+    protected $rulesPath = '';
 
-	/**
-	 * Iterates over the csv, checking rules
-	 *
-	 * @access protected
-	 * @param string $file
-	 * @return void
-	 */
-	protected function analyze($file){
-		$handle = fopen($file, 'r');
+    /**
+     * Validator Class constructor
+     *
+     * @access public
+     *
+     * @param array $config
+     */
+    public function __construct(array $config = [])
+    {
+        $this->config($config);
+    }
 
-		//Parse the first row, instantiate all the validators
-		$row = $this->parseFirstRow($this->fgetcsv($handle));
-		if(empty($this->errors)) {
+    /**
+     * Iterates over the csv, checking rules
+     *
+     * @access protected
+     *
+     * @param string $file
+     *
+     * @return void
+     */
+    protected function analyze($file)
+    {
+        $handle = fopen($file, 'r');
 
-			$this->loadRules($row, $file);
-			while(($data = $this->fgetcsv($handle)) !== false) {
-				while(($params = each($data))) {
-					$this->checkRule($params);
-					if (!empty($this->errors)){
-						break 2;
-					}
-				}
-			}
-		}
-		fclose($handle);
-	}
+        //Parse the first row, instantiate all the validators
+        $row = $this->parseFirstRow($this->fgetcsv($handle));
+        if (empty($this->errors)) {
 
-	/**
-	 * Verifies that required fields are all present and logs errors if missing.
-	 *
-	 * @access protected
-	 * @param array $row
-	 * @return void
-	 */
-	protected function checkRequiredFields(array $row){
-		$required = $this->requiredFields;
+            $this->loadRules($row, $file);
+            // set a line counter
+            $line = 2;
+            while (($data = $this->fgetcsv($handle)) !== false) {
+                while (($params = each($data))) {
+                    $this->checkRule($line, $params);
+                    if (($this->stopOnError) & !empty($this->errors)) {
+                        break 2;
+                    }
+                }
+                $line++;
+            }
+        }
+        fclose($handle);
+    }
 
-		// Fields that must all be present
-		$and = array_filter($required, 'is_string');
+    /**
+     * Verifies that required fields are all present and logs errors if missing.
+     *
+     * @access protected
+     *
+     * @param array $row
+     *
+     * @return void
+     */
+    protected function checkRequiredFields(array $row)
+    {
+        $required = $this->requiredFields;
 
-		// Fields where at least one must be present
-		$or = array_filter($required, 'is_array');
+        // Fields that must all be present
+        $and = array_filter($required, 'is_string');
 
-		/**
-		 * The following block checks if required fields are all present
-		 * and logs any errors errors
-		 */
-		if (
-			// number of fields is less than the required count
-			count($row) < count($required) ||
+        // Fields where at least one must be present
+        $or = array_filter($required, 'is_array');
 
-			// $or fields are required, but not present
-			(!empty($or) && !$this->orFieldsValid($or, $row)) ||
+        /**
+         * The following block checks if required fields are all present
+         * and logs any errors errors
+         */
+        if (
+            // number of fields is less than the required count
+            count($row) < count($required) ||
 
-			// remaining fields are not present
-			count(array_intersect($and, $row)) !== count($and)
-		){
-			$this->logMissingRequiredFields($row, $and, $or);
-		}
-	}
+            // $or fields are required, but not present
+            (!empty($or) && !$this->orFieldsValid($or, $row)) ||
 
-	/**
-	 * Checks if a rule for the $params['key'] exists and validates.
-	 *
-	 * Logs errors from the rule if invalid.
-	 *
-	 * @access protected
-	 * @param array $params ['key' => ?, 'value' => ?]
-	 * @return void
-	 * @throws  \LogicException If a mapped rule does not exist
-	 */
-	protected function checkRule(array $params){
-		$value = trim($params['value']);
-		$key = $params['key'];
+            // remaining fields are not present
+            count(array_intersect($and, $row)) !== count($and)
+        ) {
+            $this->logMissingRequiredFields($row, $and, $or);
+        }
+    }
 
-		if(isset($this->rulesMap[$key])) {
-			$className = $this->rulesMap[$key];
-			if (!empty($this->rules[$className])){
-				$rule = $this->rules[$className];
-			 	if (!$rule->validate($value)){
-					$this->errors[] = $rule->getErrorMessage($value);
-				}
-			} else {
-				throw new \LogicException($className . ' Rule was mapped, but not loaded.');
-			}
-		}
-	}
+    /**
+     * Checks if a rule for the $params['key'] exists and validates.
+     * Logs errors from the rule if invalid.
+     *
+     * @access protected
+     * @param int   $line   line counter
+     * @param array $params ['key' => ?, 'value' => ?]
+     *
+     * @return void
+     * @throws  \LogicException If a mapped rule does not exist
+     */
+    protected function checkRule($line = 0, array $params)
+    {
+        $value = trim($params[ 'value' ]);
+        $key   = $params[ 'key' ];
 
-	/**
-	 * Configuration method
-	 *
-	 * options:
-	 * * string delimiter
-	 * * string enclosure
-	 * * string escape
-	 * * array requiredFields
-	 *
-	 * @access public
-	 * @param array $options
-	 * @return void
-	 */
-	public function config($options) {
-		foreach($options as $key => $config){
-			$method = 'set' . Inflector::classify($key);
-			if (method_exists($this, $method)) {
-				$this->$method($config);
-			}
-		}
-	}
+        if (isset($this->rulesMap[ $key ])) {
+            $className = $this->rulesMap[ $key ];
+            if (!empty($this->rules[ $className ])) {
+                $rule = $this->rules[ $className ];
+                if (!$rule->validate($value)) {
+                    $this->errors[ ] = array($line, $rule->getErrorMessage($value));
+                }
+            } else {
+                throw new \LogicException($className . ' Rule was mapped, but not loaded.');
+            }
+        }
+    }
 
-	/**
-	 * Given a file pointer resource, return the next row from the file
-	 *
-	 * @access public
-	 * @param Resource $handle
-	 * @return array|null|false
-	 * @throws \InvalidArgumentException If $handle is not a valid resource
-	 */
-	public function fgetcsv($handle){
-		$result = fgetcsv($handle, 0, $this->delimiter, $this->enclosure, $this->escape);
-		if ($result === null){
-			throw new \InvalidArgumentException('File pointer resource used in fgetcsv is invalid');
-		}
-		return $result;
-	}
+    /**
+     * Configuration method
+     * options:
+     * * string delimiter
+     * * string enclosure
+     * * string escape
+     * * array requiredFields
+     *
+     * @access public
+     *
+     * @param array $options
+     *
+     * @return void
+     */
+    public function config($options)
+    {
+        foreach ($options as $key => $config) {
+            $method = 'set' . Inflector::classify($key);
+            if (method_exists($this, $method)) {
+                $this->$method($config);
+            }
+        }
+    }
 
-	/**
-	 * Return the array of errors
-	 *
-	 * @access public
-	 * @param void
-	 * @return array
-	 */
-	public function getErrors() {
-		return $this->errors;
-	}
+    /**
+     * Given a file pointer resource, return the next row from the file
+     *
+     * @access public
+     *
+     * @param Resource $handle
+     *
+     * @return array|null|false
+     * @throws \InvalidArgumentException If $handle is not a valid resource
+     */
+    public function fgetcsv($handle)
+    {
+        $result = fgetcsv($handle, 0, $this->delimiter, $this->enclosure, $this->escape);
+        if ($result === null) {
+            throw new \InvalidArgumentException('File pointer resource used in fgetcsv is invalid');
+        }
 
-	/**
-	 * Checks a CSV file for validity based on defined policies.
-	 *
-	 * Stops on the first violation
-	 *
-	 * @access public
-	 * @param string $file Full path
-	 * @return boolean
-	 */
-	public function isValid($file) {
-		if (file_exists($file)){
-			$this->analyze($file);
-		} else {
-			$this->errors[] = 'File ' . $file . ' does not exist.';
-		}
+        return $result;
+    }
 
-		return empty($this->errors);
-	}
+    /**
+     * Return the array of errors
+     * Errors return the row in which they occured long with the message
+     *
+     * @access public
+     *
+     * @param void
+     *
+     * @return array ( [row line], [error message])
+     */
+    public function getErrors()
+    {
+        return $this->errors;
+    }
 
-	/**
-	 * Loads a single rule into the Validator::$rules array
-	 *
-	 * @access public
-	 * @param int $columnIndex  Zero based
-	 * @param string $className Class name without namespace
-	 * @param mixed $Rule       A fully qualified class name, or an instance that
-	 *                          extends Zumba\CsvPolicy\Rule
-	 * @return boolean
-	 */
-	public function loadRule($columnIndex, $className, $Rule){
-		if (!isset($this->rules[$className])){
-			if (is_string($Rule)){
-				$this->makeRule($className, $Rule);
-			} elseif (is_object($Rule) && $Rule instanceof \Zumba\CsvPolicy\Rule) {
-				$this->rules[$className] = $Rule;
-			} else {
-				$this->errors[] = "Validator::loadRule expected a fully qualified class name" .
-							      " or an instance of Zumba\\CsvPolicy\\Rule";
-			}
-		}
-		$noErrors = empty($this->errors);
-		if ($noErrors){
-			$this->rulesMap[$columnIndex] = $className;
-		}
-		return $noErrors;
-	}
+    /**
+     * Checks a CSV file for validity based on defined policies.
+     * Stops on the first violation
+     *
+     * @access public
+     *
+     * @param string $file Full path
+     *
+     * @return boolean
+     */
+    public function isValid($file)
+    {
+        if (file_exists($file)) {
+            $this->analyze($file);
+        } else {
+            $this->errors[ ] = array(0, 'File ' . $file . ' does not exist.');
+        }
 
-	/**
-	 * Loads all of the rule validators
-	 *
-	 * @access protected
-	 * @param array $row
-	 * @param string $file
-	 * @return void
-	 */
-	protected function loadRules(array $row, $file){
-		$info = pathinfo($file);
-		$namespace = Inflector::classify($info['filename']);
-		$rulesPath = $this->rulesPath;
+        return empty($this->errors);
+    }
 
-		foreach ($row as $key => $value) {
-			$name = Inflector::classify($value);
-			$relativePath = "/Zumba/CsvPolicy/Rule/$namespace/$name";
-			$filename = $rulesPath . $relativePath . '.php';
-			if (file_exists($filename)){
-				require_once $filename;
-				$Rule = str_replace('/', '\\', $relativePath);
-				$this->loadRule($key, $name, $Rule);
-			}
-			$this->columnIndexes[$key] = $value;
-		}
-	}
+    /**
+     * Loads a single rule into the Validator::$rules array
+     *
+     * @access public
+     *
+     * @param int    $columnIndex Zero based
+     * @param string $className   Class name without namespace
+     * @param mixed  $Rule        A fully qualified class name, or an instance that
+     *                            extends Zumba\CsvPolicy\Rule
+     *
+     * @return boolean
+     */
+    public function loadRule($columnIndex, $className, $Rule)
+    {
+        if (!isset($this->rules[ $className ])) {
+            if (is_string($Rule)) {
+                $this->makeRule($className, $Rule);
+            } elseif (is_object($Rule) && $Rule instanceof \Zumba\CsvPolicy\Rule) {
+                $this->rules[ $className ] = $Rule;
+            } else {
+                $this->errors[ ] = array(
+                    0,
+                    "Validator::loadRule expected a fully qualified class name" .
+                    " or an instance of Zumba\\CsvPolicy\\Rule"
+                );
+            }
+        }
+        $noErrors = empty($this->errors);
+        if ($noErrors) {
+            $this->rulesMap[ $columnIndex ] = $className;
+        }
 
-	/**
-	 * Logs missing required fields
-	 *
-	 * @access protected
-	 * @param array $row
-	 * @param array $and
-	 * @param array $or
-	 * @return void
-	 */
-	protected function logMissingRequiredFields(array $row, array $and = [], array $or = []) {
-		if (!empty($and)){
-			$required = implode('", "', array_diff($and, $row));
-			if (!empty($required)){
-				$this->errors[] = sprintf(
-					'The following missing columns are required: "%s".',
-					$required
-				);
-			}
-		}
-		if(!empty($or)){
-			$logOrError = function($fields) use ($row){
-				$diff = array_diff($fields, $row);
-				if (!count($diff)){
-					$this->errors[] = sprintf(
-						'At least one of the following columns is required: "%s".',
-						implode($diff, '", "')
-					);
-				}
-			};
-			array_walk($or, $logOrError->bindTo($this));
-		}
-	}
+        return $noErrors;
+    }
 
-	/**
-	 * Create a rule from a fully qualified class name and push it onto Validator::rules
-	 *
-	 * @access protected
-	 * @param string $className
-	 * @param string $NameSpacedClass
-	 * @return void
-	 */
-	protected function makeRule($className, $NameSpacedClass){
-		if (class_exists($NameSpacedClass)){
-			$this->rules[$className] = new $NameSpacedClass();
-		} else {
-			$this->errors[] = sprintf('Could not instantiate rule class: "%s".', $NameSpacedClass);
-		}
-	}
+    /**
+     * Loads all of the rule validators
+     *
+     * @access protected
+     *
+     * @param array  $row
+     * @param string $file
+     *
+     * @return void
+     */
+    protected function loadRules(array $row, $file)
+    {
+        $info      = pathinfo($file);
+        $namespace = Inflector::classify($info[ 'filename' ]);
+        $rulesPath = $this->rulesPath;
 
-	/**
-	 * Normalizes the data in a row.
-	 *
-	 * @access protected
-	 * @param array $row
-	 * @return array
-	 */
-	protected function normalizeRow(array $row) {
-		return array_filter(array_map('trim', array_map('strtolower', $row)));
-	}
+        foreach ($row as $key => $value) {
+            $name         = Inflector::classify($value);
+            $relativePath = "/Zumba/CsvPolicy/Rule/$namespace/$name";
+            $filename     = $rulesPath . $relativePath . '.php';
+            if (file_exists($filename)) {
+                require_once $filename;
+                $Rule = str_replace('/', '\\', $relativePath);
+                $this->loadRule($key, $name, $Rule);
+            }
+            $this->columnIndexes[ $key ] = $value;
+        }
+    }
 
-	/**
-	 * Checks if arrays of fields in `$or` have at least one value present in `$fields`.
-	 *
-	 * @access protected
-	 * @param array $or
-	 * @param array $fields
-	 * @return boolean
-	 */
-	protected function orFieldsValid(array $or, array $fields) {
-		$valid = true;
-		foreach($or as $requiredFields){
-			$valid = count(array_intersect($requiredFields, $fields)) > 0;
-			if (!$valid){
-				break;
-			}
-		}
-		return $valid;
-	}
+    /**
+     * Logs missing required fields
+     *
+     * @access protected
+     *
+     * @param array $row
+     * @param array $and
+     * @param array $or
+     *
+     * @return void
+     */
+    protected function logMissingRequiredFields(array $row, array $and = [], array $or = [])
+    {
+        if (!empty($and)) {
+            $required = implode('", "', array_diff($and, $row));
+            if (!empty($required)) {
+                $this->errors[ ] = array(
+                    0,
+                    sprintf(
+                        'The following missing columns are required: "%s".',
+                        $required
+                    )
+                );
+            }
+        }
+        if (!empty($or)) {
+            $logOrError = function ($fields) use ($row) {
+                $diff = array_diff($fields, $row);
+                if (!count($diff)) {
+                    $this->errors[ ] = array(
+                        0,
+                        sprintf(
+                            'At least one of the following columns is required: "%s".',
+                            implode($diff, '", "')
+                        )
+                    );
+                }
+            };
+            array_walk($or, $logOrError->bindTo($this));
+        }
+    }
 
-	/**
-	 * Parses the first row
-	 *
-	 * Checks for duplicate column names and ensures all required fields are present
-	 *
-	 * @param array $data
-	 * @access protected
-	 * @return array $row normalized
-	 */
-	protected function parseFirstRow(array $row) {
-		$row = $this->normalizeRow($row);
+    /**
+     * Create a rule from a fully qualified class name and push it onto Validator::rules
+     *
+     * @access protected
+     *
+     * @param string $className
+     * @param string $NameSpacedClass
+     *
+     * @return void
+     */
+    protected function makeRule($className, $NameSpacedClass)
+    {
+        if (class_exists($NameSpacedClass)) {
+            $this->rules[ $className ] = new $NameSpacedClass();
+        } else {
+            $this->errors[ ] = array(0, sprintf('Could not instantiate rule class: "%s".', $NameSpacedClass));
+        }
+    }
 
-		$duplicateKeys = array_diff_key($row, array_unique($row));
+    /**
+     * Normalizes the data in a row.
+     *
+     * @access protected
+     *
+     * @param array $row
+     *
+     * @return array
+     */
+    protected function normalizeRow(array $row)
+    {
+        return array_filter(array_map('trim', array_map('strtolower', $row)));
+    }
 
-		if(!empty($duplicateKeys)) {
-			$duplicateKeys = implode($duplicateKeys, '", "');
-			$this->errors[] = sprintf('The following columns are duplicated: "%s".', $duplicateKeys);
-		}
+    /**
+     * Checks if arrays of fields in `$or` have at least one value present in `$fields`.
+     *
+     * @access protected
+     *
+     * @param array $or
+     * @param array $fields
+     *
+     * @return boolean
+     */
+    protected function orFieldsValid(array $or, array $fields)
+    {
+        $valid = true;
+        foreach ($or as $requiredFields) {
+            $valid = count(array_intersect($requiredFields, $fields)) > 0;
+            if (!$valid) {
+                break;
+            }
+        }
 
-		if(empty($this->errors)) {
-			$this->checkRequiredFields($row);
-		}
-		return $row;
-	}
+        return $valid;
+    }
 
-	/**
-	 * Sets the delimiter
-	 *
-	 * @access public
-	 * @param string $delimiter
-	 * @return \Zumba\CsvPolicy\Validator instance
-	 */
-	public function setDelimiter($delimiter = ','){
-		$this->delimiter = $delimiter;
-		return $this;
-	}
+    /**
+     * Parses the first row
+     * Checks for duplicate column names and ensures all required fields are present
+     *
+     * @param array $data
+     *
+     * @access protected
+     * @return array $row normalized
+     */
+    protected function parseFirstRow(array $row)
+    {
+        $row = $this->normalizeRow($row);
 
-	/**
-	 * Sets the enclosure
-	 *
-	 * @access public
-	 * @param string $enclosure
-	 * @return \Zumba\CsvPolicy\Validator instance
-	 */
-	public function setEnclosure($enclosure = '"'){
-		$this->enclosure = $enclosure;
-		return $this;
-	}
+        $duplicateKeys = array_diff_key($row, array_unique($row));
 
-	/**
-	 * Sets the escape
-	 *
-	 * @access public
-	 * @param string $escape
-	 * @return \Zumba\CsvPolicy\Validator instance
-	 */
-	public function setEscape($escape = '\\'){
-		$this->escape = $escape;
-		return $this;
-	}
+        if (!empty($duplicateKeys)) {
+            $duplicateKeys   = implode($duplicateKeys, '", "');
+            $this->errors[ ] = sprintf('The following columns are duplicated: "%s".', $duplicateKeys);
+        }
 
-	/**
-	 * Sets the required fields
-	 *
-	 * @access public
-	 * @param array $requiredFields
-	 * @return \Zumba\CsvPolicy\Validator instance
-	 */
-	public function setRequiredFields(array $requiredFields = []){
-		$this->requiredFields = $requiredFields;
-		return $this;
-	}
+        if (empty($this->errors)) {
+            $this->checkRequiredFields($row);
+        }
 
-	/**
-	 * Sets the rules path
-	 *
-	 * @access public
-	 * @param String $path
-	 * @return \Zumba\CsvPolicy\Validator instance
-	 */
-	public function setRulesPath($path) {
-		$this->rulesPath = $path;
-		return $this;
-	}
+        return $row;
+    }
+
+    /**
+     * Sets the delimiter
+     *
+     * @access public
+     *
+     * @param string $delimiter
+     *
+     * @return \Zumba\CsvPolicy\Validator instance
+     */
+    public function setDelimiter($delimiter = ',')
+    {
+        $this->delimiter = $delimiter;
+
+        return $this;
+    }
+
+    /**
+     * Sets the enclosure
+     *
+     * @access public
+     *
+     * @param string $enclosure
+     *
+     * @return \Zumba\CsvPolicy\Validator instance
+     */
+    public function setEnclosure($enclosure = '"')
+    {
+        $this->enclosure = $enclosure;
+
+        return $this;
+    }
+
+    /**
+     * Sets the escape
+     *
+     * @access public
+     *
+     * @param string $escape
+     *
+     * @return \Zumba\CsvPolicy\Validator instance
+     */
+    public function setEscape($escape = '\\')
+    {
+        $this->escape = $escape;
+
+        return $this;
+    }
+
+    /**
+     * Sets the required fields
+     *
+     * @access public
+     *
+     * @param array $requiredFields
+     *
+     * @return \Zumba\CsvPolicy\Validator instance
+     */
+    public function setRequiredFields(array $requiredFields = [])
+    {
+        $this->requiredFields = $requiredFields;
+
+        return $this;
+    }
+
+    /**
+     * Set whether or not to stop the validation when an error has been found
+     *
+     * @param boolean $stop
+     */
+    public function setStopOnError($stop)
+    {
+        $this->stopOnError = $stop;
+    }
+
+    /**
+     * Sets the rules path
+     *
+     * @access public
+     *
+     * @param String $path
+     *
+     * @return \Zumba\CsvPolicy\Validator instance
+     */
+    public function setRulesPath($path)
+    {
+        $this->rulesPath = $path;
+
+        return $this;
+    }
 }

@@ -2,15 +2,20 @@
 
 namespace Zumba\CsvPolicy\Test\Validator;
 
-use \Zumba\CsvPolicy\Test\TestCase,
-	\Zumba\CsvPolicy\Validator;
+use Zumba\CsvPolicy\Test\TestCase;
+use Zumba\CsvPolicy\Validator;
 
 /**
  * @group validator
  */
 class ValidatorTest extends TestCase {
 
-	public function setUp() {
+    /**
+     * @var Validator
+     */
+    protected $lib;
+
+    public function setUp() {
 		$this->lib = new Validator();
 	}
 
@@ -80,9 +85,25 @@ class ValidatorTest extends TestCase {
 		$this->assertTrue($this->lib->isValid(FIXTURE_PATH . '/valid_numbers.csv'));
 	}
 
-	public function testInvalidCsvWithRules(){
-		$this->lib->setRulesPath(RULES_PATH);
-		$this->assertFalse($this->lib->isValid(FIXTURE_PATH . '/invalid_numbers.csv'));
+    public function testInvalidCsvWithRulesStopOnFirstError()
+    {
+        $this->lib->setRulesPath(RULES_PATH);
+        $this->lib->setStopOnError(true);
+        $this->assertFalse($this->lib->isValid(FIXTURE_PATH . '/invalid_numbers.csv'));
 		$this->assertEquals(1, count($this->lib->getErrors()));
 	}
+
+    public function testInvalidCsvWithRulesNoStopOnError()
+    {
+        $this->lib->setRulesPath(RULES_PATH);
+        $this->lib->setStopOnError(false);
+        $this->assertFalse($this->lib->isValid(FIXTURE_PATH . '/invalid_numbers.csv'));
+        $this->assertEquals(2, count($this->lib->getErrors()));
+        $errorone = $this->lib->getErrors()[ 0 ];
+        $this->assertEquals(2, count($errorone));
+        $this->assertEquals(6, $errorone[ 0 ]);
+        $errortwo = $this->lib->getErrors()[ 1 ];
+        $this->assertEquals(2, count($errortwo));
+        $this->assertEquals(6, $errorone[ 0 ]);
+    }
 }
