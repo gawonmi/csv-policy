@@ -78,8 +78,8 @@ class Rule {
 	 * @return string
 	 */
 	public function getErrorMessage($input) {
-		return $input . ' is invalid.';
-	}
+        return sprintf('"%s" is invalid.', $input);
+    }
 
 	/**
 	 * Returns the inputs that have been validated against
