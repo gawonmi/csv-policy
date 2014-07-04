@@ -368,7 +368,7 @@ class Validator
             $required = implode('", "', array_diff($and, $row));
             if (!empty($required)) {
                 $this->errors[ ] = array(
-                    0,
+                    1,
                     sprintf(
                         'The following missing columns are required: "%s".',
                         $required
@@ -381,7 +381,7 @@ class Validator
                 $diff = array_diff($fields, $row);
                 if (!count($diff)) {
                     $this->errors[ ] = array(
-                        0,
+                        1,
                         sprintf(
                             'At least one of the following columns is required: "%s".',
                             implode($diff, '", "')
@@ -466,7 +466,7 @@ class Validator
 
         if (!empty($duplicateKeys)) {
             $duplicateKeys   = implode($duplicateKeys, '", "');
-            $this->errors[ ] = sprintf('The following columns are duplicated: "%s".', $duplicateKeys);
+            $this->errors[ ] = array(1, sprintf('The following columns are duplicated: "%s".', $duplicateKeys));
         }
 
         if (empty($this->errors)) {
